@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syntax Analyzer For C Program</title>
+    <style>
+   body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f0f0f0;
+            color: #333;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 98%;
+            background: #ffffff;
+            padding: 25px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 0 0 10px 0;
+        }
+        
+        p {
+           margin: 0;
+        }
+
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 1em;
+            resize: vertical;
+            min-height: 200px;
+        }
+
+        button {
+            padding: 12px;
+            background-color: #007bff;
+            width: 250px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+        }
+
+        .results-area {
+            margin-top: 15px;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .results-area h2 {
+            margin: 0;
+        }
+
+        .output-section {
+            background-color: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 15px;
+        }
+
+        .output-section h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        pre {
+            background-color: #fff;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: "Consolas", "Courier New", monospace;
+            min-height: 20px;
+        }
+
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Syntax Analyzer For C Program</h1>
+        
+        <textarea id="codeInput" rows="15" placeholder="Write your code"></textarea>
+        <button id="analyzeButton">Check Syntax</button>
+
+        <div class="results-area">
+            <h2>Results:</h2>
+            <div id="errorDisplay" class="error-message" style="display: none;"></div>
+            <div class="output-section">
+                <h3>Generated Tokens:</h3>
+                <pre id="tokensOutput"></pre>
+            </div>
+            <div class="output-section">
+                <h3>Syntax Analysis Result:</h3>
+                <pre id="syntaxResultOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            function findTokens(code) {
+                const tokens = [];
+                const tokenPatterns = [
+                    { type: 'COMMENT',      pattern: /^\/\*[\s\S]*?\*\/|^\/\/.* / },
+                    { type: 'PREPROCESSOR', pattern: /^#\w+.*/ },
+                    { type: 'KEYWORD',      pattern: /^(int|void|char|if|else|while|return|for)\b/ },
+                    { type: 'IDENTIFIER',   pattern: /^[a-zA-Z_][a-zA-Z0-9_]*/ },
+                    { type: 'NUMBER',       pattern: /^[0-9]+/ },
+                    { type: 'PUNCTUATION',  pattern: /^[(){};,]/ },
+                    { type: 'OPERATOR',     pattern: /^[=+\-*/><!&|]+/ },
+                    { type: 'WHITESPACE',   pattern: /^\s+/ },
+                ];
+                let remainingCode = code;
+                let line = 1;
+                while (remainingCode.length > 0) {
+                    let matchFound = false;
+                    for (const definition of tokenPatterns) {
+                        const match = remainingCode.match(definition.pattern);
+                        if (match) {
+                            const word = match[0];
+                            if (definition.type !== 'WHITESPACE' && definition.type !== 'COMMENT') {
+                                tokens.push({ type: definition.type, value: word, line: line });
+                            }
+                            line += (word.match(/\n/g) || []).length;
+                            remainingCode = remainingCode.substring(word.length);
+                            matchFound = true;
+                            break;
+                        }
+                    }
+                    if (!matchFound) { return { success: false, message: `Lexical Error: Unrecognized character "${remainingCode[0]}" on line ${line}.` }; }
+                }
+                tokens.push({ type: 'END_OF_FILE', value: 'EOF', line: line });
+                return { success: true, data: tokens };
+            }
+
+            function checkGrammar(tokens) {
+                let position = 0;
+
+                const peek = () => tokens[position];
+                const isAtEnd = () => peek().type === 'END_OF_FILE';
+                const advance = () => { if (!isAtEnd()) position++; };
+                const check = (type, value) => !isAtEnd() && peek().type === type && (value === undefined || peek().value === value);
+
+                const createSyntaxError = (token, helpfulMessage) => {
+                    const message = `Syntax Error ${helpfulMessage}\').`;
+                    return { success: false, message: message };
+                };
+                
+                const consume = (type, value, errorMessage) => {
+                    if (check(type, value)) {
+                        advance();
+                        return { success: true };
+                    }
+                    return createSyntaxError(peek(), errorMessage);
+                };
+
+                let parseExpression, parseStatement, parseDeclaration;
+
+                const parsePrimary = () => {
+                    if (check('NUMBER') || check('IDENTIFIER')) { advance(); return { success: true }; }
+                    if (check('PUNCTUATION', '(')) {
+                        advance();
+                        const result = parseExpression(); if (!result.success) return result;
+                        return consume('PUNCTUATION', ')', "Expected ')' after expression in parentheses.");
+                    }
+                    return createSyntaxError(peek(), "Expected a number, variable, or '(' to start an expression.");
+                };
+                const parseFactor = () => {
+                    let result = parsePrimary(); if (!result.success) return result;
+                    while (check('OPERATOR', '*') || check('OPERATOR', '/')) { advance(); result = parsePrimary(); if (!result.success) return result; }
+                    return { success: true };
+                };
+                const parseTerm = () => {
+                    let result = parseFactor(); if (!result.success) return result;
+                    while (check('OPERATOR', '+') || check('OPERATOR', '-')) { advance(); result = parseFactor(); if (!result.success) return result; }
+                    return { success: true };
+                };
+                const parseComparison = () => {
+                    let result = parseTerm(); if (!result.success) return result;
+                    while (check('OPERATOR', '>') || check('OPERATOR', '<') || check('OPERATOR', '==') || check('OPERATOR', '!=')) { advance(); result = parseTerm(); if (!result.success) return result; }
+                    return { success: true };
+                };
+                parseExpression = () => parseComparison();
+
+                const parseBlock = () => {
+                    let result = consume('PUNCTUATION', '{', "Expected '{' to begin a code block."); if (!result.success) return result;
+                    while (!check('PUNCTUATION', '}') && !isAtEnd()) {
+                        result = parseDeclaration(); if (!result.success) return result;
+                    }
+                    return consume('PUNCTUATION', '}', "Expected '}' to close the code block.");
+                };
+
+                parseStatement = () => {
+                    if (check('KEYWORD', 'if')) {
+                        advance();
+                        let result = consume('PUNCTUATION', '(', "Expected '(' after 'if'."); if (!result.success) return result;
+                        result = parseExpression(); if (!result.success) return result;
+                        result = consume('PUNCTUATION', ')', "Expected ')' after if-condition."); if (!result.success) return result;
+                        result = parseStatement(); if (!result.success) return result;
+                        if (check('KEYWORD', 'else')) { advance(); return parseStatement(); }
+                        return { success: true };
+                    }
+
+                    if (check('KEYWORD', 'for')) {
+                        advance();
+                        let result = consume('PUNCTUATION', '(', "Expected '(' after 'for'.");
+                        if (!result.success) return result;
+
+                        if (check('KEYWORD', 'int') || check('KEYWORD', 'char')) {
+                            advance();
+                            result = consume('IDENTIFIER', undefined, "Expected a variable name in for-loop initializer.");
+                            if (!result.success) return result;
+                            if (check('OPERATOR', '=')) {
+                                advance();
+                                result = parseExpression();
+                                if (!result.success) return result;
+                            }
+                        } else if (!check('PUNCTUATION', ';')) {
+                            result = parseExpression();
+                            if (!result.success) return result;
+                        }
+                        result = consume('PUNCTUATION', ';', "Expected ';' after for-loop initializer.");
+                        if (!result.success) return result;
+
+                        if (!check('PUNCTUATION', ';')) {
+                            result = parseExpression();
+                            if (!result.success) return result;
+                        }
+                        result = consume('PUNCTUATION', ';', "Expected ';' after for-loop condition.");
+                        if (!result.success) return result;
+
+                        if (!check('PUNCTUATION', ')')) {
+                            result = parseExpression();
+                            if (!result.success) return result;
+                        }
+                        result = consume('PUNCTUATION', ')', "Expected ')' to close for-loop clauses.");
+                        if (!result.success) return result;
+
+                        return parseStatement();
+                    }
+
+                    if (check('KEYWORD', 'while')) {
+                        advance();
+                        let result = consume('PUNCTUATION', '(', "Expected '(' after 'while'."); if(!result.success) return result;
+                        result = parseExpression(); if(!result.success) return result;
+                        result = consume('PUNCTUATION', ')', "Expected ')' after while-condition."); if(!result.success) return result;
+                        return parseStatement();
+                    }
+                    if (check('KEYWORD', 'return')) {
+                        advance();
+                        if (!check('PUNCTUATION', ';')) { let result = parseExpression(); if(!result.success) return result; }
+                        return consume('PUNCTUATION', ';', "Expected ';' after return value.");
+                    }
+                    if (check('PUNCTUATION', '{')) { return parseBlock(); }
+
+                    const result = parseExpression();
+                    if (!result.success) return result;
+                    return consume('PUNCTUATION', ';', "Expected ';' at the end of the statement.");
+                };
+
+                parseDeclaration = () => {
+                    if (check('KEYWORD', 'int') || check('KEYWORD', 'void') || check('KEYWORD', 'char')) {
+                        advance();
+                        let result = consume('IDENTIFIER', undefined, "Expected a variable or function name.");
+                        if (!result.success) return result;
+                        if (check('PUNCTUATION', '(')) {
+                             advance();
+                             while(!check('PUNCTUATION', ')')) {
+                                if(check('KEYWORD')) advance();
+                                if(check('IDENTIFIER')) advance();
+                                if(check('PUNCTUATION', ',')) advance(); else break;
+                             }
+                             result = consume('PUNCTUATION', ')', "Expected ')' after function parameters."); if (!result.success) return result;
+                             if(check('PUNCTUATION', '{')) { return parseBlock(); }
+                             else { return consume('PUNCTUATION', ';', "Expected ';' for a function prototype or '{' for a definition.");}
+                        } else {
+                            if (check('OPERATOR', '=')) {
+                                advance();
+                                result = parseExpression();
+                                if (!result.success) return result;
+                            }
+                            return consume('PUNCTUATION', ';', "Expected ';' after variable declaration.");
+                        }
+                    }
+                    return parseStatement();
+                };
+
+                while (!isAtEnd()) {
+                    if(check('PREPROCESSOR')) { advance(); continue; }
+                    const result = parseDeclaration();
+                    if (!result.success) return result;
+                }
+
+                return { success: true, message: "Success! The code's syntax is correct." };
+            }
+
+            const codeInput = document.getElementById('codeInput');
+            const analyzeButton = document.getElementById('analyzeButton');
+            const tokensOutput = document.getElementById('tokensOutput');
+            const syntaxResultOutput = document.getElementById('syntaxResultOutput');
+            const errorDisplay = document.getElementById('errorDisplay');
+
+            analyzeButton.addEventListener('click', () => {
+                const code = codeInput.value;
+                tokensOutput.textContent = '';
+                syntaxResultOutput.textContent = '';
+                errorDisplay.style.display = 'none';
+
+                if (!code.trim()) {
+                    errorDisplay.textContent = 'Please enter  code ';
+                    errorDisplay.style.display = 'block';
+                    return;
+                }
+                const tokenResult = findTokens(code);
+                if (!tokenResult.success) {
+                    errorDisplay.textContent = tokenResult.message;
+                    errorDisplay.style.display = 'block';
+                    return; 
+                }
+                const tokens = tokenResult.data;
+                const formattedTokens = tokens.map(t => 
+                    ` Type: ${t.type.padEnd(12)} -> ${JSON.stringify(t.value)}`
+                ).join('\n');
+                tokensOutput.textContent = formattedTokens;
+                const grammarResult = checkGrammar(tokens);
+                if (!grammarResult.success) {
+                    errorDisplay.textContent = grammarResult.message;
+                    errorDisplay.style.display = 'block';
+                } else {
+                    syntaxResultOutput.textContent = grammarResult.message;
+                }
+            });
+            if(document.getElementById('codeInput').value) {
+                analyzeButton.click();
+            }
+        });
+    </script>
+</body>
+</html>

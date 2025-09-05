@@ -318,7 +318,6 @@
                     }
                     return parseStatement();
                 };
-
                 while (!isAtEnd()) {
                     if(check('PREPROCESSOR')) { advance(); continue; }
                     const result = parseDeclaration();
